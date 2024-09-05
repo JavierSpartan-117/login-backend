@@ -22,6 +22,7 @@ export class AuthService {
         password: bcrypt.hashSync(password, 10),
       });
       await this.userRepository.save(user);
+      await this.generateMfaToken(user);
       return user;
     } catch (error) {
       this.handleDBError(error, createUserDto.email);
@@ -36,13 +37,15 @@ export class AuthService {
       select: { id: true, email: true, password: true, isActive: true },
     });
     if (!user) {
-      throw new BadRequestException('User not found');
+      throw new BadRequestException(
+        `No hay ningun usuario con el email ${email} registrado`,
+      );
     }
     if (!bcrypt.compareSync(password, user.password)) {
-      throw new BadRequestException('Invalid password');
+      throw new BadRequestException('Contraseña incorrecta');
     }
     if (!user.isActive) {
-      throw new BadRequestException('User is not active');
+      throw new BadRequestException('Usuario inactivo');
     }
 
     return await this.generateMfaToken(user);
@@ -74,7 +77,7 @@ export class AuthService {
 
     const sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
     sendSmtpEmail.subject = 'MFA Token';
-    sendSmtpEmail.htmlContent = `<html><body><h1>Your MFA Token is: ${mfaToken}</h1></body></html>`;
+    sendSmtpEmail.htmlContent = `<html><body><h1>Su codigo de verificacion es: ${mfaToken}</h1></body></html>`;
     sendSmtpEmail.sender = {
       email: 'miguelgar56382gar@gmail.com',
       name: 'Miguel',
@@ -83,7 +86,7 @@ export class AuthService {
 
     try {
       await apiInstance.sendTransacEmail(sendSmtpEmail);
-      return { message: 'MFA token sent' };
+      return { message: 'MFA token enviado' };
     } catch (error) {
       console.error(error);
     }
@@ -99,15 +102,19 @@ export class AuthService {
       user.mfaToken !== mfaToken ||
       new Date() > new Date(user.mfaTokenExpiresAt)
     ) {
-      throw new BadRequestException('Invalid or expired MFA token');
+      throw new BadRequestException(
+        'Codigo de verificacion invalido o expirado',
+      );
     }
 
-    return { message: 'MFA token verified' };
+    return { message: 'MFA token verificado' };
   }
 
   private handleDBError(error: any, email: string): never {
     if (error.code === '23505') {
-      throw new BadRequestException(`User with email ${email} already exists`);
+      throw new BadRequestException(
+        `El usuario con el email ${email} ya existe`,
+      );
     }
     throw new BadRequestException('Error');
   }
